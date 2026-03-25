@@ -1,150 +1,92 @@
 # insight_generator.py
 
-from typing import Dict, List, Tuple
+from typing import List, Dict
 from collections import Counter
 
 
 class InsightGenerator:
 
-    def __init__(self, case_database: Dict[str, Dict]):
-        self.case_database = case_database
+    def __init__(self):
+        pass
 
 
-    
-    # MAIN INSIGHT GENERATION FUNCTION
-   
-    def generate_insight(
-        self,
-        top_matches: List[Tuple[str, float]]
-    ) -> Dict:
+    # 🔹 MAIN FUNCTION
+    def generate_insight(self, top_matches: List[Dict]) -> Dict:
 
-        # No Similar Cases Found
+        # Case: No matches found
         if not top_matches:
             return {
-                "predicted_diagnosis": "N/A",
-                "suggested_treatment": "N/A",
-                "confidence_score": 0.0,
-                "confidence_reason": "Insufficient similarity data.",
-                "explanation": "No similar historical cases found."
+                "prediction": None,
+                "confidence": 0.0,
+                "explanation": "No similar cases found."
             }
 
-        diagnoses = []
-        treatments = []
+        # 🔹 Step 1: Extract diagnoses
+        diagnoses = [case["diagnosis"] for case in top_matches]
 
-        # Collect Diagnosis & Treatment
-        for case_id, score in top_matches:
-            case_data = self.case_database.get(case_id, {})
+        # 🔹 Step 2: Majority Voting
+        diagnosis_counts = Counter(diagnoses)
+        predicted_diagnosis = diagnosis_counts.most_common(1)[0][0]
 
-            diagnosis = case_data.get("diagnosis", "insufficient data")
-            treatment = case_data.get("treatment", "insufficient data")
+        # 🔹 Step 3: Confidence Score (Average similarity)
+        similarities = [case["similarity"] for case in top_matches]
+        confidence = sum(similarities) / len(similarities)
 
-            if diagnosis:
-                diagnoses.append(diagnosis)
+        # 🔹 Step 4: Explanation Generation
+        explanation = self._generate_explanation(top_matches, predicted_diagnosis)
 
-            if treatment:
-                treatments.append(treatment)
-
-        # Most common values
-        most_common_diagnosis = self._most_common(diagnoses)
-        recommended_treatment = self._most_common(treatments)
-
-        # Generate explanation
-        summary = self._generate_summary(
-            most_common_diagnosis,
-            recommended_treatment
-        )
-
-        # Confidence
-        confidence_reason = self._generate_confidence(top_matches)
-        confidence_score = self._numeric_confidence(top_matches)
-
-        # Final structured output
+        # 🔹 Final Output
         return {
-            "predicted_diagnosis": most_common_diagnosis,
-            "suggested_treatment": recommended_treatment,
-            "confidence_score": confidence_score,
-            "confidence_reason": confidence_reason,
-            "explanation": summary
+            "prediction": predicted_diagnosis,
+            "confidence": round(confidence, 3),
+            "explanation": explanation
         }
 
 
-    
-    # SUMMARY GENERATION 
-    
-    def _generate_summary(
-        self,
-        diagnosis: str,
-        treatment: str
-    ) -> str:
+    # 🔹 Explanation Logic
+    def _generate_explanation(self, top_matches: List[Dict], prediction: str) -> str:
 
-        if diagnosis == "insufficient data" and treatment == "insufficient data":
-            return (
-                "Similar cases were identified, but structured diagnosis "
-                "and treatment data are not available for recommendation."
-            )
-
-        if diagnosis != "insufficient data" and treatment == "insufficient data":
-            return (
-                f"In similar past cases, patients were commonly diagnosed with "
-                f"{diagnosis}. Treatment patterns were not consistently recorded."
-            )
-
-        if diagnosis == "insufficient data" and treatment != "insufficient data":
-            return (
-                f"In similar past cases, patients responded well to "
-                f"{treatment}, although diagnosis data was limited."
-            )
+        high_sim_cases = [
+            case for case in top_matches if case["similarity"] > 0.8
+        ]
 
         return (
-            f"In similar past cases, patients were commonly diagnosed with "
-            f"{diagnosis} and responded well to {treatment}."
+            f"Prediction is '{prediction}' based on {len(top_matches)} similar cases. "
+            f"{len(high_sim_cases)} cases have high similarity (>0.8). "
+            f"Most frequent diagnosis among retrieved cases is '{prediction}'."
         )
 
 
-    
-    # MOST COMMON ITEM
-   
-    @staticmethod
-    def _most_common(items: List[str]) -> str:
-        if not items:
-            return "insufficient data"
-        return Counter(items).most_common(1)[0][0]
+# 🔹 TEST BLOCK (IMPORTANT for Day 1 validation)
+if __name__ == "__main__":
 
+    # Dummy input (same format as retrieval output)
+    sample_top_matches = [
+        {
+            "case_id": "C1",
+            "similarity": 0.91,
+            "features": [0.1, 0.2, 0.3],
+            "diagnosis": "Arrhythmia",
+            "outcome": "Recovered"
+        },
+        {
+            "case_id": "C2",
+            "similarity": 0.85,
+            "features": [0.2, 0.1, 0.4],
+            "diagnosis": "Arrhythmia",
+            "outcome": "Stable"
+        },
+        {
+            "case_id": "C3",
+            "similarity": 0.78,
+            "features": [0.9, 0.8, 0.7],
+            "diagnosis": "Normal",
+            "outcome": "Stable"
+        }
+    ]
 
-    
-    # TEXT CONFIDENCE
-    
-    @staticmethod
-    def _generate_confidence(
-        top_matches: List[Tuple[str, float]]
-    ) -> str:
+    engine = InsightGenerator()
+    result = engine.generate_insight(sample_top_matches)
 
-        if not top_matches:
-            return "Insufficient similarity data."
-
-        scores = [score for _, score in top_matches]
-
-        avg_score = sum(scores) / len(scores)
-        max_score = max(scores)
-
-        if avg_score > 0.85 and max_score > 0.9:
-            return "High confidence based on strong similarity with historical cases."
-        elif avg_score > 0.65:
-            return "Moderate confidence based on similarity patterns."
-        else:
-            return "Low similarity confidence. Clinical review advised."
-
-
-   
-    # NUMERIC CONFIDENCE
-   
-    @staticmethod
-    def _numeric_confidence(
-        top_matches: List[Tuple[str, float]]
-    ) -> float:
-
-        if not top_matches:
-            return 0.0
-
-        scores = [score for _, score in top_matches]
-        return round(sum(scores) / len(scores), 2)
+    print("\n🧠 Insight Output:\n")
+    print(result)
