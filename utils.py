@@ -1,13 +1,11 @@
 # utils.py
 
 import pandas as pd
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 
 
-# DATA LOADER
-
+# 🔹 DATA LOADER
 def load_case_database(file_path: str) -> Dict[str, Dict[str, Any]]:
-    
 
     df = pd.read_csv(file_path)
     case_database: Dict[str, Dict[str, Any]] = {}
@@ -21,6 +19,7 @@ def load_case_database(file_path: str) -> Dict[str, Dict[str, Any]]:
         symptoms_list = [s.strip() for s in symptoms_raw.split(",") if s.strip()]
 
         case_database[case_id] = {
+            "case_id": case_id,  # 🔥 IMPORTANT ADD
             "symptoms": symptoms_list,
             "diagnosis": str(row.get("diagnosis", "")).strip(),
             "treatment": str(row.get("treatment", "")).strip(),
@@ -36,10 +35,8 @@ def load_case_database(file_path: str) -> Dict[str, Dict[str, Any]]:
     return case_database
 
 
-# INPUT VALIDATION
-
+# 🔹 INPUT VALIDATION
 def validate_case_input(case_input: Dict[str, Any]) -> bool:
-    
 
     required_fields = ["symptoms"]
 
@@ -53,29 +50,29 @@ def validate_case_input(case_input: Dict[str, Any]) -> bool:
     return True
 
 
-# OUTPUT FORMATTER
-
+# 🔹 OUTPUT FORMATTER (UPDATED)
 def format_output(
     query_case_id: str,
-    top_matches: List[Tuple[str, float]],
+    top_matches: List[Dict[str, Any]],
     insight: Dict[str, Any]
 ) -> str:
-    
 
     result = "\n==== CCMS-AI RESULT ====\n\n"
 
     result += f"Query Case ID: {query_case_id}\n\n"
 
-    # Similar cases
+    # 🔹 Similar cases
     result += "🔎 Top Similar Cases:\n"
 
     if not top_matches:
         result += "No similar cases found.\n"
     else:
-        for case_id, similarity in top_matches:
+        for case in top_matches:
+            case_id = case.get("case_id", "N/A")
+            similarity = case.get("similarity", 0.0)
             result += f"- Case ID: {case_id} | Similarity: {similarity:.4f}\n"
 
-    # Diagnosis
+    # 🔹 Diagnosis
     diagnosis = insight.get(
         "diagnosis",
         "No confident diagnosis could be inferred from the retrieved cases."
@@ -84,7 +81,7 @@ def format_output(
     result += "\n🩺 Predicted Diagnosis:\n"
     result += f"{diagnosis}\n"
 
-    # Treatment
+    # 🔹 Treatment
     treatment = insight.get(
         "treatment",
         "No treatment recommendation available due to insufficient matching cases."
@@ -93,7 +90,7 @@ def format_output(
     result += "\n💊 Suggested Treatment:\n"
     result += f"{treatment}\n"
 
-    # Confidence output
+    # 🔹 Confidence
     confidence_score = insight.get("confidence_score", "N/A")
     confidence_level = insight.get(
         "confidence_level",
@@ -106,7 +103,7 @@ def format_output(
     result += "\n📈 Confidence Level:\n"
     result += f"{confidence_level}\n"
 
-    # Clinical Explanation (NEW SECTION)
+    # 🔹 Clinical Explanation
     explanation = insight.get(
         "clinical_explanation",
         "No clinical explanation available."
@@ -120,8 +117,6 @@ def format_output(
     return result
 
 
-# LOGGER
-
+# 🔹 LOGGER
 def log(message: str) -> None:
-    
     print(f"[CCMS-AI] {message}")

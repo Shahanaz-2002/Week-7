@@ -2,6 +2,7 @@
 
 from typing import List, Dict
 from collections import Counter
+from retrieval_engine import retrieve_similar_cases
 
 
 class InsightGenerator:
@@ -10,10 +11,17 @@ class InsightGenerator:
         pass
 
 
-    # 🔹 MAIN FUNCTION
-    def generate_insight(self, top_matches: List[Dict]) -> Dict:
+    # 🔹 MAIN FUNCTION (UPDATED FOR DAY 2)
+    def generate_insight(self, query: str, case_database: Dict) -> Dict:
 
-        # Case: No matches found
+        # 🔹 Step 0: Get similar cases ONLY from retrieval engine
+        top_matches = retrieve_similar_cases(
+            query=query,
+            case_database=case_database,
+            top_k=3
+        )
+
+        # 🔹 Case: No matches found
         if not top_matches:
             return {
                 "prediction": None,
@@ -57,36 +65,36 @@ class InsightGenerator:
         )
 
 
-# 🔹 TEST BLOCK (IMPORTANT for Day 1 validation)
+# 🔹 TEST BLOCK (UPDATED)
 if __name__ == "__main__":
 
-    # Dummy input (same format as retrieval output)
-    sample_top_matches = [
-        {
+    # Dummy case database (simulating stored cases)
+    case_database = {
+        "C1": {
             "case_id": "C1",
-            "similarity": 0.91,
             "features": [0.1, 0.2, 0.3],
             "diagnosis": "Arrhythmia",
             "outcome": "Recovered"
         },
-        {
+        "C2": {
             "case_id": "C2",
-            "similarity": 0.85,
             "features": [0.2, 0.1, 0.4],
             "diagnosis": "Arrhythmia",
             "outcome": "Stable"
         },
-        {
+        "C3": {
             "case_id": "C3",
-            "similarity": 0.78,
             "features": [0.9, 0.8, 0.7],
             "diagnosis": "Normal",
             "outcome": "Stable"
         }
-    ]
+    }
+
+    # Example query
+    query = "irregular heartbeat and chest discomfort"
 
     engine = InsightGenerator()
-    result = engine.generate_insight(sample_top_matches)
+    result = engine.generate_insight(query, case_database)
 
     print("\n🧠 Insight Output:\n")
     print(result)

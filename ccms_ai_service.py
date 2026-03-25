@@ -4,63 +4,51 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict
 
-from embedding import EmbeddingEngine
-from similarity_engine import SimilarityEngine
+from retrieval_engine import retrieve_similar_cases
 from insight_aggregator import InsightAggregator
 from confidence_engine import ConfidenceEngine
 from explanation_generator import ExplanationGenerator
 
-from database import fetch_case_database, fetch_case_embeddings
-from config import TOP_K, EMBEDDING_DIM
+from database import fetch_case_database
+from config import TOP_K
 
 
-
-# Initialize FastAPI App
-
-
+# 🔹 Initialize FastAPI App
 app = FastAPI(title="CCMS AI Clinical Insight Service")
 
 
-
-# Load database once when server starts
+# 🔹 Load database once
 case_database: Dict = fetch_case_database()
-case_embeddings = fetch_case_embeddings()
 
-embedding_engine = EmbeddingEngine(embedding_dim=EMBEDDING_DIM)
-similarity_engine = SimilarityEngine(case_embeddings)
 insight_aggregator = InsightAggregator()
 confidence_engine = ConfidenceEngine()
 explanation_generator = ExplanationGenerator()
 
 
-
-# Input Schema
+# 🔹 Input Schema
 class CaseInput(BaseModel):
-
     symptoms: List[str]
     doctor_notes: str
 
-# API Endpoint
-@app.post("/analyze-case")
 
+# 🔹 API Endpoint
+@app.post("/analyze-case")
 def analyze_case(case: CaseInput):
 
-    # Prepare patient case
-    new_case = {
+    # 🔹 Prepare patient case (QUERY)
+    query_case = {
         "symptoms": case.symptoms,
         "doctor_notes": case.doctor_notes
     }
 
-    # Generate embedding
-    query_embedding = embedding_engine.generate_embedding(new_case)
-
-    # Retrieve similar cases
-    top_matches = similarity_engine.retrieve_top_k(
-        query_embedding,
+    # 🔹 Retrieve similar cases (ONLY via retrieval engine)
+    top_matches = retrieve_similar_cases(
+        query=query_case,
+        case_database=case_database,
         top_k=TOP_K
     )
 
-    # Safety check if nothing retrieved
+    # 🔹 Safety check
     if not top_matches:
         return {
             "similar_cases": [],
@@ -73,58 +61,44 @@ def analyze_case(case: CaseInput):
             "explanation": "No similar clinical cases were found in the database."
         }
 
-    # Collect retrieved case data
-    retrieved_cases = []
+    # 🔹 retrieved_cases already contain full data from retrieval engine
+    retrieved_cases = top_matches
 
-    for case_id, similarity_score in top_matches:
-
-        if case_id in case_database:
-
-            case_data = case_database[case_id].copy()
-            case_data["similarity"] = float(similarity_score)
-
-            retrieved_cases.append(case_data)
-
-    # Generate insight from retrieved cases
+    # 🔹 Generate insight
     insight = insight_aggregator.aggregate_insights(retrieved_cases)
 
-    # Compute confidence
+    # 🔹 Compute confidence
     confidence = confidence_engine.compute_confidence(retrieved_cases)
 
     insight["confidence_score"] = confidence.get("confidence_score", 0)
     insight["confidence_level"] = confidence.get("confidence_level", "Very Low")
 
-    # Generate clinical explanation
+    # 🔹 Generate explanation
     explanation = explanation_generator.generate_explanation(
         insight,
         retrieved_cases
     )
 
-    # Format similar cases for response
+    # 🔹 Format similar cases
     similar_cases = [
         {
-            "case_id": case_id,
-            "similarity": round(float(sim), 4)
+            "case_id": case.get("case_id"),
+            "similarity": round(float(case.get("similarity", 0)), 4)
         }
-        for case_id, sim in top_matches
+        for case in retrieved_cases
     ]
 
-    # Return API response
+    # 🔹 Final response
     return {
-
         "similar_cases": similar_cases,
-
         "diagnosis": insight.get("diagnosis", "Unknown condition"),
-
         "treatment_pattern": insight.get(
             "treatment",
             "No treatment pattern found"
         ),
-
         "confidence": {
             "score": insight.get("confidence_score", 0),
             "level": insight.get("confidence_level", "Very Low Confidence")
         },
-
         "explanation": explanation
     }

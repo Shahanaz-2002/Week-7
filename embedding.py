@@ -1,23 +1,42 @@
+# embedding.py
+
 import numpy as np
 from typing import Dict, Any
 import torch
 from transformers import AutoTokenizer, AutoModel
 
 
+# 🔹 Singleton BioBERT Model (LOAD ONLY ONCE)
 class BioBERTEmbedding:
 
-    def __init__(self):
+    _instance = None  # singleton instance
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(BioBERTEmbedding, cls).__new__(cls)
 
-        self.MODEL_NAME = "emilyalsentzer/Bio_ClinicalBERT"
+            cls._instance.device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.MODEL_NAME)
-        self.model = AutoModel.from_pretrained(self.MODEL_NAME)
+            cls._instance.MODEL_NAME = "emilyalsentzer/Bio_ClinicalBERT"
 
-        self.model.to(self.device)
-        self.model.eval()
+            print("🔄 Loading BioClinicalBERT model... (only once)")
 
+            cls._instance.tokenizer = AutoTokenizer.from_pretrained(
+                cls._instance.MODEL_NAME
+            )
+            cls._instance.model = AutoModel.from_pretrained(
+                cls._instance.MODEL_NAME
+            )
+
+            cls._instance.model.to(cls._instance.device)
+            cls._instance.model.eval()
+
+        return cls._instance
+
+
+    # 🔹 Mean Pooling
     def mean_pooling(self, model_output, attention_mask):
 
         token_embeddings = model_output.last_hidden_state
@@ -32,6 +51,8 @@ class BioBERTEmbedding:
 
         return sum_embeddings / sum_mask
 
+
+    # 🔹 Get embedding for text
     def get_embedding(self, text: str) -> np.ndarray:
 
         inputs = self.tokenizer(
@@ -52,6 +73,7 @@ class BioBERTEmbedding:
             inputs["attention_mask"]
         ).cpu().numpy()[0]
 
+        # 🔹 Normalize (IMPORTANT for cosine similarity)
         norm = np.linalg.norm(embedding)
 
         if norm > 0:
@@ -62,19 +84,21 @@ class BioBERTEmbedding:
         return embedding
 
 
+# 🔹 Embedding Engine
 class EmbeddingEngine:
 
     def __init__(self, embedding_dim: int = 768):
 
         self.embedding_dim = embedding_dim
 
+        # Singleton model (no repeated loading)
         self.embedding_model = BioBERTEmbedding()
 
-        # Metadata for embedding storage
         self.embedding_model_name = "BioClinicalBERT"
         self.embedding_version = "v1"
 
-    # Generate embedding for retrieval
+
+    # 🔹 Generate embedding (FOR RETRIEVAL)
     def generate_embedding(self, case_data: Dict[str, Any]) -> np.ndarray:
 
         processed_text = self._preprocess_case(case_data)
@@ -83,7 +107,8 @@ class EmbeddingEngine:
 
         return embedding_vector
 
-    # Convert embedding for MongoDB storage
+
+    # 🔹 Generate embedding for DB storage
     def generate_embedding_for_storage(self, case_data: Dict[str, Any]) -> Dict[str, Any]:
 
         embedding_vector = self.generate_embedding(case_data)
@@ -94,15 +119,31 @@ class EmbeddingEngine:
             "embedding_version": self.embedding_version
         }
 
-    # Convert clinical case into text
+
+    # 🔹 Convert case → text
     def _preprocess_case(self, case_data: Dict[str, Any]) -> str:
 
         symptoms = case_data.get("symptoms", [])
-
         diagnosis = case_data.get("diagnosis", "")
-
         notes = case_data.get("doctor_notes", case_data.get("notes", ""))
 
         combined_text = " ".join(symptoms) + " " + diagnosis + " " + notes
 
         return combined_text.lower().strip()
+
+
+# 🔹 TEST BLOCK
+if __name__ == "__main__":
+
+    sample_case = {
+        "symptoms": ["itching", "red rash"],
+        "notes": "Patient has red itchy rash on arm",
+        "diagnosis": "eczema"
+    }
+
+    engine = EmbeddingEngine()
+
+    emb = engine.generate_embedding(sample_case)
+
+    print("\nEmbedding shape:", emb.shape)
+    print("First 5 values:", emb[:5])

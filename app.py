@@ -1,72 +1,57 @@
+# app.py
+
 from fastapi import FastAPI, HTTPException
 from typing import Dict
 import time
 
 from models import CaseRequest, CaseResponse, SimilarCase, SystemMetrics
-from embedding import EmbeddingEngine
-from similarity_engine import SimilarityEngine
+from retrieval_engine import retrieve_similar_cases
 from insight_generator import InsightGenerator
 from database import fetch_case_database
-from config import TOP_K, EMBEDDING_DIM
+from config import TOP_K
 
 
 app = FastAPI(title="CCMS AI Similarity Engine")
 
 
-embedding_engine = EmbeddingEngine(embedding_dim=EMBEDDING_DIM)
+# 🔹 GLOBALS
 case_database: Dict = {}
-similarity_engine: SimilarityEngine = None
 insight_generator: InsightGenerator = None
 response_cache = {}
 
 
-
-# STARTUP INITIALIZATION
-
+# 🔹 STARTUP INITIALIZATION
 @app.on_event("startup")
 def initialize_system():
 
-    global case_database, similarity_engine, insight_generator
+    global case_database, insight_generator
 
     case_database = fetch_case_database()
 
-    print("DB SIZE:", len(case_database))  
+    print("📦 DB SIZE:", len(case_database))
 
     if not case_database:
         print("⚠ No cases found in database.")
         return
 
-    case_embeddings = {}
+    # Only insight generator needed
+    insight_generator = InsightGenerator()
 
-    for case_id, case_data in case_database.items():
-        try:
-            embedding = embedding_engine.generate_embedding(case_data)
-            case_embeddings[case_id] = embedding
-        except Exception as e:
-            print(f"Embedding error for {case_id}:", str(e))  
-
-    similarity_engine = SimilarityEngine(case_embeddings)
-    insight_generator = InsightGenerator(case_database)
-
-    print("System initialized successfully.")
+    print("✅ System initialized successfully.")
 
 
+# 🔹 OUTPUT QUALITY
+def determine_output_quality(confidence_score: float) -> str:
 
-# OUTPUT QUALITY
-
-def determine_output_quality(confidence_reason: str) -> str:
-
-    if "High" in confidence_reason:
+    if confidence_score > 0.8:
         return "High"
-    elif "Moderate" in confidence_reason:
+    elif confidence_score > 0.6:
         return "Moderate"
     else:
         return "Low"
 
 
-
-# MAIN API ENDPOINT
-
+# 🔹 MAIN API ENDPOINT
 @app.post("/analyze-case", response_model=CaseResponse)
 def analyze_case(request: CaseRequest):
 
@@ -74,76 +59,74 @@ def analyze_case(request: CaseRequest):
 
     request_key = str(request.symptoms) + request.doctor_notes
 
-    # CACHE CHECK
+    # 🔹 CACHE CHECK
     if request_key in response_cache:
         return response_cache[request_key]
 
     try:
 
-        if not case_database or similarity_engine is None:
+        if not case_database:
             raise HTTPException(
                 status_code=500,
                 detail="System not initialized properly."
             )
 
-        # Prepare input case
-        new_case = {
+        # 🔹 Prepare query case
+        query_case = {
             "symptoms": request.symptoms,
-            "diagnosis": "",
-            "notes": request.doctor_notes,
+            "doctor_notes": request.doctor_notes
         }
 
-        # Generate embedding
-        query_embedding = embedding_engine.generate_embedding(new_case)
-
-        # Retrieve similar cases
-        top_matches = similarity_engine.retrieve_top_k(
-            query_embedding,
+        # 🔹 Retrieve similar cases (ONLY via retrieval engine)
+        top_matches = retrieve_similar_cases(
+            query=query_case,
+            case_database=case_database,
             top_k=TOP_K
         )
 
-        print("TOP MATCHES:", top_matches)  
+        print("🔍 TOP MATCHES:", top_matches)
 
-        # Safety check
+        # 🔹 Safety check
         if not top_matches:
             raise ValueError("No similar cases retrieved.")
 
+        # 🔹 Format similar cases
         similar_cases = [
             SimilarCase(
-                case_id=case_id,
-                similarity_score=score
+                case_id=case.get("case_id"),
+                similarity_score=round(float(case.get("similarity", 0.0)), 4)
             )
-            for case_id, score in top_matches
+            for case in top_matches
         ]
 
-        
-        # STRUCTURED INSIGHT
-        
-        insight = insight_generator.generate_insight(top_matches)
+        # 🔹 Generate insight
+        insight = insight_generator.generate_insight(
+            query=query_case,
+            case_database=case_database
+        )
 
-        print("INSIGHT OUTPUT:", insight)  
+        print("🧠 INSIGHT:", insight)
 
-        predicted_diagnosis = insight.get("predicted_diagnosis", "N/A")
-        suggested_treatment = insight.get("suggested_treatment", "N/A")
-        confidence_score = insight.get("confidence_score", 0.0)
-        confidence_reason = insight.get("confidence_reason", "N/A")
+        predicted_diagnosis = insight.get("prediction", "N/A")
+        confidence_score = insight.get("confidence", 0.0)
         explanation = insight.get("explanation", "N/A")
 
-        # Measure Response Time
+        # Optional treatment
+        suggested_treatment = insight.get("treatment", "N/A")
+
+        # 🔹 Measure Response Time
         end_time = time.time()
         response_time_ms = (end_time - start_time) * 1000
 
-        # Determine Output Quality
-        output_quality = determine_output_quality(confidence_reason)
+        # 🔹 Output Quality
+        output_quality = determine_output_quality(confidence_score)
 
         system_metrics = SystemMetrics(
             response_time_ms=round(response_time_ms, 2),
             output_quality=output_quality
         )
 
-        
-        # FINAL RESPONSE
-        
+        # 🔹 FINAL RESPONSE
         response = CaseResponse(
             similar_cases=similar_cases,
 
@@ -151,21 +134,21 @@ def analyze_case(request: CaseRequest):
             suggested_treatment=suggested_treatment,
 
             confidence_score=confidence_score,
-            confidence_reason=confidence_reason,
+            confidence_reason=output_quality,
 
             explanation=explanation,
 
             system_metrics=system_metrics
         )
 
-        # Cache result
+        # 🔹 Cache result
         response_cache[request_key] = response
 
         return response
 
     except Exception as e:
 
-        print("ERROR:", str(e))  
+        print("❌ ERROR:", str(e))
 
         return CaseResponse(
             similar_cases=[],
