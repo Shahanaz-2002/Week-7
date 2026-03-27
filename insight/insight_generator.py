@@ -2,7 +2,7 @@
 
 from typing import List, Dict
 from collections import Counter
-from retrieval_engine import retrieve_similar_cases
+from retrieval.retrieval_engine import retrieve_similar_cases
 
 
 class InsightGenerator:

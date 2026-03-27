@@ -8,3 +8,4 @@ sentencepiece
 torch
 transformers
 accelerate
+pandas

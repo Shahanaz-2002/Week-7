@@ -1,0 +1,101 @@
+import time
+import logging
+from fastapi import FastAPI, HTTPException
+import uvicorn
+
+from api.models import CaseRequest, CaseResponse, SimilarCase, SystemMetrics
+from retrieval.retrieval_engine import retrieve_similar_cases
+from retrieval.database import fetch_case_database
+from insight.insight_aggregator import InsightAggregator
+from insight.confidence_engine import ConfidenceEngine
+from insight.explanation_generator import ExplanationGenerator
+from config import TOP_K
+
+# 🔹 Setup Logging (Day 5)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Clinical Insight Engine API", version="1.0")
+
+# 🔹 Initialize Engines & Cache DB
+logger.info("Initializing Insight Engines and loading Case Database...")
+try:
+    case_database = fetch_case_database()
+    if not case_database:
+        logger.warning("Case database is empty or failed to load!")
+except Exception as e:
+    logger.error(f"Database initialization failed: {e}")
+    case_database = []
+
+insight_aggregator = InsightAggregator()
+confidence_engine = ConfidenceEngine()
+explanation_generator = ExplanationGenerator()
+
+
+@app.post("/analyze-case", response_model=CaseResponse)
+def analyze_case(request: CaseRequest):
+    start_time = time.time()
+    logger.info("Received new case analysis request.")
+
+    try:
+        # 🔹 1. Format Input for Retrieval Contract
+        query_text = " ".join(request.symptoms) + " " + request.doctor_notes
+
+        # 🔹 2. Retrieve Similar Cases
+        top_matches = retrieve_similar_cases(
+            query_text=query_text,
+            case_database=case_database,
+            top_k=TOP_K
+        )
+
+        if not top_matches:
+            logger.warning("No similar cases retrieved. Returning default response.")
+            return CaseResponse(
+                similar_cases=[],
+                system_metrics=SystemMetrics(
+                    response_time_ms=round((time.time() - start_time) * 1000, 2),
+                    output_quality="Poor - No Matches"
+                )
+            )
+
+        # 🔹 3. Generate Insights
+        insight = insight_aggregator.aggregate_insights(top_matches)
+        
+        # 🔹 4. Compute Confidence
+        confidence_data = confidence_engine.compute_confidence(top_matches)
+        
+        # 🔹 5. Generate Explanation
+        explanation = explanation_generator.generate_explanation(insight, top_matches)
+
+        # 🔹 6. Format Output
+        similar_cases_formatted = [
+            SimilarCase(
+                case_id=c["case_id"],
+                similarity_score=c["similarity"],
+                diagnosis=c.get("diagnosis", "Unknown"),
+                treatment=c.get("treatment", "Unknown")
+            ) for c in top_matches
+        ]
+
+        response_time = round((time.time() - start_time) * 1000, 2)
+        logger.info(f"Request processed successfully in {response_time}ms")
+
+        return CaseResponse(
+            similar_cases=similar_cases_formatted,
+            predicted_diagnosis=insight["diagnosis"],
+            suggested_treatment=insight["treatment"],
+            confidence_score=confidence_data["confidence_score"],
+            confidence_level=confidence_data["confidence_level"],
+            clinical_explanation=explanation,
+            system_metrics=SystemMetrics(
+                response_time_ms=response_time,
+                output_quality="High" if confidence_data["confidence_score"] > 0.7 else "Moderate"
+            )
+        )
+
+    except Exception as e:
+        logger.error(f"Error during case analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error processing case.")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
