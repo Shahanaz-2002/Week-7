@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 import uvicorn
 
-from api.models import CaseRequest, CaseResponse, SimilarCase, SystemMetrics
+from models.models import CaseRequest, CaseResponse, SimilarCase, SystemMetrics
 from retrieval.retrieval_engine import retrieve_similar_cases
 from retrieval.database import fetch_case_database
 from insight.insight_aggregator import InsightAggregator
