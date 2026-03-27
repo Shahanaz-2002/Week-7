@@ -11,8 +11,12 @@ from insight.confidence_engine import ConfidenceEngine
 from insight.explanation_generator import ExplanationGenerator
 from config import TOP_K
 
-# 🔹 Setup Logging (Day 5)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# 🔹 Setup Logging (Fixed for Uvicorn)
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s - %(levelname)s - [%(name)s] - %(message)s",
+    force=True  # <--- THIS FORCES UVICORN TO RESPECT OUR RULES
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Clinical Insight Engine API", version="1.0")
