@@ -23,6 +23,8 @@ try:
     case_database = fetch_case_database()
     if not case_database:
         logger.warning("Case database is empty or failed to load!")
+    else:
+        logger.info(f"Successfully loaded {len(case_database)} cases into memory.")
 except Exception as e:
     logger.error(f"Database initialization failed: {e}")
     case_database = []
@@ -35,13 +37,15 @@ explanation_generator = ExplanationGenerator()
 @app.post("/analyze-case", response_model=CaseResponse)
 def analyze_case(request: CaseRequest):
     start_time = time.time()
-    logger.info("Received new case analysis request.")
+    logger.info(f"Received new case analysis request. Symptoms count: {len(request.symptoms)}")
 
     try:
         # 🔹 1. Format Input for Retrieval Contract
+        logger.info("Formatting input text for embedding generation...")
         query_text = " ".join(request.symptoms) + " " + request.doctor_notes
 
         # 🔹 2. Retrieve Similar Cases
+        logger.info(f"Querying retrieval engine for top {TOP_K} matches...")
         top_matches = retrieve_similar_cases(
             query_text=query_text,
             case_database=case_database,
@@ -57,17 +61,26 @@ def analyze_case(request: CaseRequest):
                     output_quality="Poor - No Matches"
                 )
             )
+        
+        logger.info(f"Successfully retrieved {len(top_matches)} similar cases.")
 
         # 🔹 3. Generate Insights
+        logger.info("Aggregating clinical insights from retrieved cases...")
         insight = insight_aggregator.aggregate_insights(top_matches)
+        logger.info(f"Aggregation complete. Predicted diagnosis: '{insight.get('diagnosis')}'")
         
         # 🔹 4. Compute Confidence
+        logger.info("Computing confidence score based on similarity metrics...")
         confidence_data = confidence_engine.compute_confidence(top_matches)
+        logger.info(f"Confidence computed: {confidence_data.get('confidence_level')} ({confidence_data.get('confidence_score')})")
         
         # 🔹 5. Generate Explanation
+        logger.info("Generating clinical explanation narrative...")
         explanation = explanation_generator.generate_explanation(insight, top_matches)
+        logger.info("Clinical explanation generated successfully.")
 
         # 🔹 6. Format Output
+        logger.info("Formatting final API response...")
         similar_cases_formatted = [
             SimilarCase(
                 case_id=c["case_id"],
@@ -94,7 +107,7 @@ def analyze_case(request: CaseRequest):
         )
 
     except Exception as e:
-        logger.error(f"Error during case analysis: {str(e)}")
+        logger.error(f"Error during case analysis pipeline: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Server Error processing case.")
 
 if __name__ == "__main__":
